@@ -1,48 +1,53 @@
 # PixelForge
 
-A pixel art editing application built with OpenGL and C++.
+A simple and elegant image editor with a clean UI.
 
-## Prerequisites
+## Features
 
-You need to have either:
+- Multiple predefined canvas resolutions (HD, Full HD, QHD, 4K)
+- Custom 1280x750 resolution preset
+- Open and edit images
+- Clean, modern interface
+
+## Building the Project
+
+### Prerequisites
+
+You need either:
+- MinGW with g++ compiler, or
 - Visual Studio with C++ development tools
-- MinGW-w64 with GCC compiler
 
-## Building on Windows
+### Building
 
-### Option 1: Using the batch file (easiest)
-
-1. Double-click on `build_and_run.bat` in Windows Explorer
-2. The script will detect your compiler and build the application
-3. If successful, it will automatically run the application
-
-### Option 2: Using Visual Studio Command Line
+Simply run the `build_and_run.bat` script to build and run the application:
 
 ```
-cl /EHsc src/main.cpp /link opengl32.lib glu32.lib user32.lib gdi32.lib
+build_and_run.bat
 ```
 
-### Option 3: Using MinGW
+This will automatically detect your compiler, build the project, and run it.
+
+### Project Structure
 
 ```
-g++ -std=c++17 -Wall src/main.cpp -o PixelForge.exe -lopengl32 -lglu32 -lgdi32 -luser32
+PixelForge/
+├── build/                # Build output directory
+├── src/                  # Source code
+│   ├── core/             # Core application logic
+│   ├── ui/               # User interface components
+│   ├── utils/            # Utility functions
+│   └── resources/        # Resource files
+├── build_and_run.bat     # Build script
+└── README.md             # This file
 ```
 
-### Option 4: Using the Makefile
+## Development
 
-If you have MinGW installed:
+The application is structured in a modular way:
+- `src/main.cpp` - Entry point 
+- `src/core/application.*` - Main application class
+- `src/ui/main_window.*` - Main window UI implementation
 
-```
-mingw32-make
-```
+## License
 
-## Running
-
-After building, run the executable:
-```
-PixelForge.exe
-```
-
-## Controls
-
-- Press `ESC` to exit the application
+This project is provided as-is with no specific license.

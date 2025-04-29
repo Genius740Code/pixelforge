@@ -32,3 +32,9 @@ x86/
 # OS specific files
 .DS_Store
 Thumbs.db 
+
+vcpkg\
+
+lib/
+build/
+-p\
