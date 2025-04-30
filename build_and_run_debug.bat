@@ -1,5 +1,5 @@
 @echo off
-echo Building PixelForge...
+echo Building PixelForge in DEBUG mode...
 
 REM Create necessary directories if they don't exist
 if not exist build mkdir build
@@ -21,19 +21,18 @@ REM Set include path for better compilation
 set INCLUDE_PATH=-I./src
 
 REM Make sure previous build is not running
-taskkill /F /IM PixelForge.exe >nul 2>&1
+taskkill /F /IM PixelForge_debug.exe >nul 2>&1
 
 REM Check if MinGW or Visual Studio is available
 where g++ >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo Using MinGW GCC compiler...
-    g++ -std=c++17 -Wall %INCLUDE_PATH% ^
+    g++ -std=c++17 -Wall -g -DDEBUG %INCLUDE_PATH% ^
         src/main.cpp ^
         src/core/application.cpp ^
         src/ui/main_window.cpp ^
-        -o build/PixelForge.exe ^
-        -lopengl32 -lgdi32 -luser32 -lcomdlg32 -lgdiplus -lcomctl32 ^
-        -mwindows
+        -o build/PixelForge_debug.exe ^
+        -lopengl32 -lgdi32 -luser32 -lcomdlg32 -lgdiplus -lcomctl32
     set BUILD_RESULT=%ERRORLEVEL%
     goto :check_build
 )
@@ -41,13 +40,13 @@ if %ERRORLEVEL% EQU 0 (
 where cl >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo Using Visual Studio compiler...
-    cl /EHsc /std:c++17 /I"./src" ^
+    cl /EHsc /std:c++17 /Zi /DDEBUG /I"./src" ^
         src/main.cpp ^
         src/core/application.cpp ^
         src/ui/main_window.cpp ^
-        /Fe:build\PixelForge.exe ^
+        /Fe:build\PixelForge_debug.exe ^
         /link opengl32.lib user32.lib gdi32.lib comdlg32.lib gdiplus.lib comctl32.lib ^
-        /SUBSYSTEM:WINDOWS
+        /DEBUG
     set BUILD_RESULT=%ERRORLEVEL%
     goto :check_build
 )
@@ -66,14 +65,16 @@ if %BUILD_RESULT% EQU 0 (
 )
 
 :run
-if exist build\PixelForge.exe (
-    echo Running PixelForge...
+if exist build\PixelForge_debug.exe (
+    echo Running PixelForge in DEBUG mode...
     cd build
-    start "" PixelForge.exe
+    echo Debug output will appear in this console window.
+    PixelForge_debug.exe
     cd ..
 ) else (
-    echo Error: Executable not found after build.
+    echo Error: Debug executable not found after build.
     echo Build may have failed. Please check the errors above.
 )
 
-:end 
+:end
+pause 

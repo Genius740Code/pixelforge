@@ -1,7 +1,13 @@
 #include "main_window.h"
 #include <commdlg.h>
+#ifdef DEBUG
+#include <stdio.h>
+#endif
 
 namespace PixelForge {
+
+// Initialize static map
+std::map<HWND, void*> WindowMap::s_windowMap;
 
 static const ResolutionPreset RESOLUTION_PRESETS[] = {
     { 1280, 720, L"1280 x 720 (HD)" },
@@ -25,49 +31,115 @@ MainWindow::MainWindow(HINSTANCE hInstance, const std::wstring& title, int width
 }
 
 MainWindow::~MainWindow() {
-    // Cleanup handled by Windows
+    // Unregister from map
+    if (m_hwnd) {
+        WindowMap::Unregister(m_hwnd);
+    }
 }
 
 bool MainWindow::Initialize() {
-    // Register the window class
-    const wchar_t CLASS_NAME[] = L"PixelForgeMainWindow";
+    #ifdef DEBUG
+    printf("MainWindow::Initialize called\n");
+    #endif
     
+    // Generate a unique class name to avoid conflicts
+    static int classCounter = 0;
+    wchar_t CLASS_NAME[64];
+    swprintf(CLASS_NAME, 64, L"PixelForgeMainWindow_%d", classCounter++);
+    
+    #ifdef DEBUG
+    printf("Using window class name: %ls\n", CLASS_NAME);
+    #endif
+    
+    // Register the window class
     WNDCLASSW wc = {};
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = m_hInstance;
     wc.lpszClassName = CLASS_NAME;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
     
     if (!RegisterClassW(&wc)) {
-        return false;
+        #ifdef DEBUG
+        DWORD error = GetLastError();
+        
+        // Class already exists - try to use it
+        if (error == ERROR_CLASS_ALREADY_EXISTS) {
+            printf("Window class already exists, will use existing registration\n");
+        } else {
+            printf("ERROR: RegisterClass failed with error code: %lu\n", error);
+            return false;
+        }
+        #else
+        // In release mode, just check if it's already registered
+        if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+            return false;
+        }
+        #endif
+    } else {
+        #ifdef DEBUG
+        printf("Window class registered successfully\n");
+        #endif
     }
     
     // Calculate window size to account for client area
     RECT rect = { 0, 0, m_width, m_height };
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
     
-    // Create the window
+    #ifdef DEBUG
+    printf("Creating window with dimensions: %dx%d (adjusted: %ldx%ld)\n", 
+           m_width, m_height, 
+           rect.right - rect.left, rect.bottom - rect.top);
+    #endif
+    
+    // Create the window with centered position
+    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+    int windowWidth = rect.right - rect.left;
+    int windowHeight = rect.bottom - rect.top;
+    int windowX = (screenWidth - windowWidth) / 2;
+    int windowY = (screenHeight - windowHeight) / 2;
+    
+    #ifdef DEBUG
+    printf("About to create window, this=%p\n", this);
+    #endif
+    
+    // Try creating the window without the this pointer in CreateWindowEx
     m_hwnd = CreateWindowExW(
         0,                          // Optional window styles
         CLASS_NAME,                 // Window class
         m_title.c_str(),            // Window text
         WS_OVERLAPPEDWINDOW,        // Window style
-        CW_USEDEFAULT, CW_USEDEFAULT, // Position
-        rect.right - rect.left,     // Width
-        rect.bottom - rect.top,     // Height
+        windowX, windowY,           // Position (centered)
+        windowWidth, windowHeight,  // Width and height
         NULL,                       // Parent window
         NULL,                       // Menu
         m_hInstance,                // Instance handle
-        this                        // Additional application data
+        NULL                        // Additional application data - We'll register manually
     );
     
     if (m_hwnd == NULL) {
+        #ifdef DEBUG
+        printf("ERROR: CreateWindowEx failed with error code: %lu\n", GetLastError());
+        #endif
         return false;
     }
     
+    // Register the window with our map
+    WindowMap::Register(m_hwnd, this);
+    
+    #ifdef DEBUG
+    printf("Window created successfully: handle=%p\n", m_hwnd);
+    printf("Registered window in WindowMap\n");
+    #endif
+    
     // Create UI controls
     CreateControls();
+    
+    #ifdef DEBUG
+    printf("UI controls created\n");
+    #endif
     
     // Calculate canvas area
     RECT clientRect;
@@ -79,27 +151,40 @@ bool MainWindow::Initialize() {
         clientRect.bottom 
     };
     
+    #ifdef DEBUG
+    printf("Canvas rect set: left=%ld, top=%ld, right=%ld, bottom=%ld\n",
+           m_canvasRect.left, m_canvasRect.top, m_canvasRect.right, m_canvasRect.bottom);
+    printf("MainWindow::Initialize completed successfully\n");
+    #endif
+    
     return true;
 }
 
 void MainWindow::Show() {
+    #ifdef DEBUG
+    printf("MainWindow::Show called\n");
+    printf("Showing window with handle: %p\n", m_hwnd);
+    #endif
+    
     ShowWindow(m_hwnd, SW_SHOW);
     UpdateWindow(m_hwnd);
+    
+    #ifdef DEBUG
+    printf("Window should now be visible\n");
+    #endif
 }
 
 LRESULT CALLBACK MainWindow::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    MainWindow* pThis = nullptr;
+    // Get the window instance from our map
+    MainWindow* pThis = reinterpret_cast<MainWindow*>(WindowMap::GetInstance(hwnd));
     
-    if (msg == WM_NCCREATE) {
-        // Get the pointer to the window instance
-        CREATESTRUCTW* pCreate = reinterpret_cast<CREATESTRUCTW*>(lParam);
-        pThis = reinterpret_cast<MainWindow*>(pCreate->lpCreateParams);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
-    } else {
-        pThis = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    #ifdef DEBUG
+    if (msg == WM_CREATE) {
+        printf("WM_CREATE received for hwnd=%p\n", hwnd);
     }
+    #endif
     
-    // Call instance-specific handler
+    // Call instance-specific handler if we have an instance
     if (pThis) {
         return pThis->HandleMessage(msg, wParam, lParam);
     }
@@ -176,6 +261,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void MainWindow::CreateControls() {
+    #ifdef DEBUG
+    printf("MainWindow::CreateControls called\n");
+    #endif
+    
     // Create resolution preset buttons
     int y = 70;
     int buttonId = ID_BUTTON_BASE;
@@ -188,7 +277,17 @@ void MainWindow::CreateControls() {
             buttonId++
         );
         
-        m_buttons.push_back(button);
+        if (button == NULL) {
+            #ifdef DEBUG
+            printf("WARNING: Failed to create button for preset: %ls\n", preset.label);
+            #endif
+        } else {
+            #ifdef DEBUG
+            printf("Created button for preset: %ls\n", preset.label);
+            #endif
+            m_buttons.push_back(button);
+        }
+        
         y += BUTTON_HEIGHT + BUTTON_MARGIN;
     }
     
@@ -200,10 +299,35 @@ void MainWindow::CreateControls() {
         ID_OPEN_IMAGE
     );
     
-    m_buttons.push_back(openButton);
+    if (openButton == NULL) {
+        #ifdef DEBUG
+        printf("WARNING: Failed to create 'Open Image' button\n");
+        #endif
+    } else {
+        #ifdef DEBUG
+        printf("Created 'Open Image' button\n");
+        #endif
+        m_buttons.push_back(openButton);
+    }
+    
+    #ifdef DEBUG
+    printf("MainWindow::CreateControls completed\n");
+    #endif
 }
 
 HWND MainWindow::CreateButton(const wchar_t* text, int x, int y, int width, int height, int id) {
+    #ifdef DEBUG
+    printf("Creating button: '%ls', id=%d\n", text, id);
+    #endif
+    
+    // Make sure parent window handle is valid
+    if (m_hwnd == NULL) {
+        #ifdef DEBUG
+        printf("ERROR: Cannot create button - parent window handle is NULL\n");
+        #endif
+        return NULL;
+    }
+    
     HWND button = CreateWindowW(
         L"BUTTON",                  // Button class
         text,                       // Button text
@@ -214,6 +338,13 @@ HWND MainWindow::CreateButton(const wchar_t* text, int x, int y, int width, int 
         m_hInstance,                // Instance handle
         NULL                        // Additional data
     );
+    
+    if (button == NULL) {
+        #ifdef DEBUG
+        DWORD error = GetLastError();
+        printf("ERROR: CreateWindow for button failed with error code: %lu\n", error);
+        #endif
+    }
     
     return button;
 }

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <map>
 
 namespace PixelForge {
 
@@ -11,6 +12,29 @@ struct ResolutionPreset {
     int width;
     int height;
     const wchar_t* label;
+};
+
+// Static map to store window references
+class WindowMap {
+public:
+    static void Register(HWND hwnd, void* instance) {
+        s_windowMap[hwnd] = instance;
+    }
+    
+    static void* GetInstance(HWND hwnd) {
+        auto it = s_windowMap.find(hwnd);
+        if (it != s_windowMap.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+    
+    static void Unregister(HWND hwnd) {
+        s_windowMap.erase(hwnd);
+    }
+    
+private:
+    static std::map<HWND, void*> s_windowMap;
 };
 
 class MainWindow {

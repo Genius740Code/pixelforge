@@ -1,16 +1,20 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall
-LDFLAGS = -lopengl32 -lgdi32 -luser32
+CXXFLAGS = -std=c++17 -Wall -I./src
+LDFLAGS = -lopengl32 -lgdi32 -luser32 -lcomdlg32 -lgdiplus -lcomctl32 -mwindows
 
-TARGET = PixelForge.exe
-SRCS = src/main.cpp
+TARGET = build/PixelForge.exe
+SRCS = src/main.cpp src/core/application.cpp src/ui/main_window.cpp
 
-all: $(TARGET)
+all: directories $(TARGET)
+
+directories:
+	@mkdir -p build
+	@if exist src\resources mkdir -p build\resources && xcopy /E /Y src\resources build\resources > nul
 
 $(TARGET): $(SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
-	del $(TARGET)
+	rm -rf build
 
-.PHONY: all clean 
+.PHONY: all clean directories 
