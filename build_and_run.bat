@@ -1,29 +1,29 @@
 @echo off
 echo Building PixelForge...
 
-REM Create necessary directories if they don't exist
+REM Create build directory if needed
 if not exist build mkdir build
 
 REM Check for source files
 if not exist src\main.cpp (
     echo Error: Source files missing. Please ensure you have the correct source code structure.
-    goto :end
+    exit /b 1
 )
 
-REM Copy any necessary resources to build directory
+REM Copy resources if they exist
 if exist src\resources (
     echo Copying resources...
     if not exist build\resources mkdir build\resources
     xcopy /E /Y src\resources build\resources > nul
 )
 
-REM Set include path for better compilation
+REM Set include path
 set INCLUDE_PATH=-I./src
 
-REM Make sure previous build is not running
+REM Terminate any running instances
 taskkill /F /IM PixelForge.exe >nul 2>&1
 
-REM Check if MinGW or Visual Studio is available
+REM Check for available compilers
 where g++ >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo Using MinGW GCC compiler...
@@ -54,26 +54,17 @@ if %ERRORLEVEL% EQU 0 (
 
 echo Error: Neither Visual Studio nor MinGW compiler found.
 echo Please install Visual Studio or MinGW and add to PATH, or compile manually.
-goto :end
+exit /b 1
 
 :check_build
 if %BUILD_RESULT% EQU 0 (
     echo Build successful!
-    goto :run
-) else (
-    echo Build failed with error code %BUILD_RESULT%. Please check the errors above.
-    goto :end
-)
-
-:run
-if exist build\PixelForge.exe (
     echo Running PixelForge...
     cd build
     start "" PixelForge.exe
     cd ..
 ) else (
-    echo Error: Executable not found after build.
-    echo Build may have failed. Please check the errors above.
-)
-
-:end 
+    echo Build failed with error code %BUILD_RESULT%. Please check the errors above.
+    pause
+    exit /b 1
+) 

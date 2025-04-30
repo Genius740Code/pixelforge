@@ -1,5 +1,6 @@
 #include "main_window.h"
 #include <commdlg.h>
+#include <gdiplus.h>
 #ifdef DEBUG
 #include <stdio.h>
 #endif
@@ -10,11 +11,12 @@ namespace PixelForge {
 std::map<HWND, void*> WindowMap::s_windowMap;
 
 static const ResolutionPreset RESOLUTION_PRESETS[] = {
-    { 1280, 720, L"1280 x 720 (HD)" },
-    { 1920, 1080, L"1920 x 1080 (Full HD)" },
-    { 2560, 1440, L"2560 x 1440 (QHD)" },
-    { 3840, 2160, L"3840 x 2160 (4K)" },
-    { 1280, 750, L"1280 x 750 (Custom)" }
+    { 1280, 720, L"1280 × 720 (16:9)" },
+    { 1920, 1080, L"1920 × 1080 (16:9)" },
+    { 1280, 1024, L"1280 × 1024 (5:4)" },
+    { 1280, 2400, L"1280 × 2400 (Phone)" },
+    { 800, 1200, L"800 × 1200 (ebook)" },
+    { 1200, 1200, L"1200 × 1200 (Square)" }
 };
 
 MainWindow::MainWindow(HINSTANCE hInstance, const std::wstring& title, int width, int height)
@@ -23,11 +25,17 @@ MainWindow::MainWindow(HINSTANCE hInstance, const std::wstring& title, int width
     , m_title(title)
     , m_width(width)
     , m_height(height)
-    , m_hasImage(false) {
+    , m_hasImage(false)
+    , m_customWidth(0)
+    , m_customHeight(0) {
     
     for (const auto& preset : RESOLUTION_PRESETS) {
         m_resolutions.push_back(preset);
     }
+    
+    // Initialize GDI+
+    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+    Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 }
 
 MainWindow::~MainWindow() {
@@ -35,6 +43,15 @@ MainWindow::~MainWindow() {
     if (m_hwnd) {
         WindowMap::Unregister(m_hwnd);
     }
+    
+    // Clean up image if loaded
+    if (m_pImage) {
+        delete m_pImage;
+        m_pImage = nullptr;
+    }
+    
+    // Shutdown GDI+
+    Gdiplus::GdiplusShutdown(m_gdiplusToken);
 }
 
 bool MainWindow::Initialize() {
@@ -269,6 +286,7 @@ void MainWindow::CreateControls() {
     int y = 70;
     int buttonId = ID_BUTTON_BASE;
     
+    // First add resolution presets
     for (const auto& preset : m_resolutions) {
         HWND button = CreateButton(
             preset.label,
@@ -291,24 +309,70 @@ void MainWindow::CreateControls() {
         y += BUTTON_HEIGHT + BUTTON_MARGIN;
     }
     
-    // Create "Open Image" button
-    HWND openButton = CreateButton(
-        L"Open Image...",
-        20, y + 20,
+    // Add custom resolution input
+    y += BUTTON_MARGIN;
+    m_customLabel = CreateWindowW(
+        L"STATIC", L"Custom Resolution:",
+        WS_VISIBLE | WS_CHILD,
+        20, y, BUTTON_WIDTH, 20,
+        m_hwnd,
+        NULL,
+        m_hInstance,
+        NULL
+    );
+    y += 25;
+    
+    // Width input
+    m_widthInput = CreateWindowW(
+        L"EDIT", L"1000",
+        WS_VISIBLE | WS_CHILD | WS_BORDER | ES_NUMBER,
+        20, y, 60, 25,
+        m_hwnd,
+        (HMENU)ID_CUSTOM_WIDTH,
+        m_hInstance,
+        NULL
+    );
+    
+    // × symbol
+    CreateWindowW(
+        L"STATIC", L"×",
+        WS_VISIBLE | WS_CHILD,
+        85, y+5, 10, 20,
+        m_hwnd,
+        NULL,
+        m_hInstance,
+        NULL
+    );
+    
+    // Height input
+    m_heightInput = CreateWindowW(
+        L"EDIT", L"1000",
+        WS_VISIBLE | WS_CHILD | WS_BORDER | ES_NUMBER,
+        100, y, 60, 25,
+        m_hwnd,
+        (HMENU)ID_CUSTOM_HEIGHT,
+        m_hInstance,
+        NULL
+    );
+    
+    y += 35;
+    
+    // Apply custom resolution button
+    m_applyButton = CreateButton(
+        L"Apply Custom Size",
+        20, y,
+        BUTTON_WIDTH, BUTTON_HEIGHT,
+        ID_APPLY_CUSTOM
+    );
+    y += BUTTON_HEIGHT + BUTTON_MARGIN * 2;
+    
+    // Add open image button
+    m_openButton = CreateButton(
+        L"Open Image",
+        20, y,
         BUTTON_WIDTH, BUTTON_HEIGHT,
         ID_OPEN_IMAGE
     );
-    
-    if (openButton == NULL) {
-        #ifdef DEBUG
-        printf("WARNING: Failed to create 'Open Image' button\n");
-        #endif
-    } else {
-        #ifdef DEBUG
-        printf("Created 'Open Image' button\n");
-        #endif
-        m_buttons.push_back(openButton);
-    }
     
     #ifdef DEBUG
     printf("MainWindow::CreateControls completed\n");
@@ -351,6 +415,7 @@ HWND MainWindow::CreateButton(const wchar_t* text, int x, int y, int width, int 
 
 void MainWindow::HandleCommand(WPARAM wParam, LPARAM lParam) {
     int controlId = LOWORD(wParam);
+    int notificationCode = HIWORD(wParam);
     
     // Check if it's a resolution preset button
     if (controlId >= ID_BUTTON_BASE && controlId < ID_BUTTON_BASE + static_cast<int>(m_resolutions.size())) {
@@ -359,7 +424,29 @@ void MainWindow::HandleCommand(WPARAM wParam, LPARAM lParam) {
         
         // Resize the window
         ResizeWindow(preset.width, preset.height);
-    } else if (controlId == ID_OPEN_IMAGE) {
+    }
+    else if (controlId == ID_APPLY_CUSTOM && notificationCode == BN_CLICKED) {
+        // Get values from edit controls
+        wchar_t widthText[10] = {0};
+        wchar_t heightText[10] = {0};
+        
+        GetWindowTextW(m_widthInput, widthText, 10);
+        GetWindowTextW(m_heightInput, heightText, 10);
+        
+        int width = _wtoi(widthText);
+        int height = _wtoi(heightText);
+        
+        // Validate input
+        if (width >= 100 && width <= 10000 && height >= 100 && height <= 10000) {
+            m_customWidth = width;
+            m_customHeight = height;
+            ResizeWindow(width, height);
+        }
+        else {
+            MessageBoxW(m_hwnd, L"Please enter valid dimensions (100-10000 pixels)", L"Invalid Dimensions", MB_OK | MB_ICONWARNING);
+        }
+    }
+    else if (controlId == ID_OPEN_IMAGE && notificationCode == BN_CLICKED) {
         OpenImage();
     }
 }
@@ -369,40 +456,87 @@ void MainWindow::ResizeWindow(int width, int height) {
     m_width = width;
     m_height = height;
     
-    // Calculate window size to account for client area
-    RECT rect = { 0, 0, width, height };
+    // Calculate window size to account for client area and sidebar
+    RECT rect = { 0, 0, width + SIDEBAR_WIDTH, height };
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
     
-    // Resize the window
+    // Get current window position
+    RECT windowRect;
+    GetWindowRect(m_hwnd, &windowRect);
+    
+    // Resize the window while maintaining position
     SetWindowPos(
         m_hwnd,
         NULL,
-        0, 0,
+        windowRect.left, windowRect.top,
         rect.right - rect.left,
         rect.bottom - rect.top,
-        SWP_NOMOVE | SWP_NOZORDER
+        SWP_NOZORDER
     );
     
     // Update window title with current resolution
-    std::wstring newTitle = m_title + L" (" + std::to_wstring(width) + L" x " + std::to_wstring(height) + L")";
+    std::wstring newTitle = m_title + L" (" + std::to_wstring(width) + L" × " + std::to_wstring(height) + L")";
     SetWindowTextW(m_hwnd, newTitle.c_str());
+    
+    // Force redraw
+    InvalidateRect(m_hwnd, NULL, TRUE);
 }
 
 void MainWindow::OpenImage() {
-    wchar_t fileName[MAX_PATH] = { 0 };
+    wchar_t fileName[MAX_PATH] = {0};
     
-    OPENFILENAMEW ofn = { 0 };
+    OPENFILENAMEW ofn = {0};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = m_hwnd;
-    ofn.lpstrFilter = L"Image Files\0*.bmp;*.jpg;*.jpeg;*.png;*.gif\0All Files\0*.*\0";
+    ofn.lpstrFilter = L"Image Files\0*.jpg;*.jpeg;*.png;*.bmp;*.gif\0All Files\0*.*\0";
     ofn.lpstrFile = fileName;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-    ofn.lpstrDefExt = L"png";
     
     if (GetOpenFileNameW(&ofn)) {
-        m_hasImage = true;
-        InvalidateRect(m_hwnd, &m_canvasRect, TRUE);
+        // Clean up previous image if any
+        if (m_pImage) {
+            delete m_pImage;
+            m_pImage = nullptr;
+        }
+        
+        // Load the new image
+        m_pImage = new Gdiplus::Image(fileName);
+        
+        if (m_pImage && m_pImage->GetLastStatus() == Gdiplus::Ok) {
+            m_hasImage = true;
+            
+            // Get image dimensions
+            int imageWidth = m_pImage->GetWidth();
+            int imageHeight = m_pImage->GetHeight();
+            
+            // Update window to match image aspect ratio while maintaining canvas area
+            ResizeWindow(imageWidth, imageHeight);
+            
+            // Update window title
+            std::wstring fileNameOnly = fileName;
+            size_t lastSlash = fileNameOnly.find_last_of(L'\\');
+            if (lastSlash != std::wstring::npos) {
+                fileNameOnly = fileNameOnly.substr(lastSlash + 1);
+            }
+            
+            std::wstring newTitle = m_title + L" - " + fileNameOnly + 
+                L" (" + std::to_wstring(imageWidth) + L" × " + std::to_wstring(imageHeight) + L")";
+            SetWindowTextW(m_hwnd, newTitle.c_str());
+        }
+        else {
+            MessageBoxW(m_hwnd, L"Failed to load the image.", L"Error", MB_OK | MB_ICONERROR);
+            
+            if (m_pImage) {
+                delete m_pImage;
+                m_pImage = nullptr;
+            }
+            
+            m_hasImage = false;
+        }
+        
+        // Force redraw
+        InvalidateRect(m_hwnd, NULL, TRUE);
     }
 }
 
@@ -412,28 +546,97 @@ void MainWindow::DrawCanvas(HDC hdc) {
     FillRect(hdc, &m_canvasRect, canvasBrush);
     DeleteObject(canvasBrush);
     
-    // Draw canvas border
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(180, 180, 180));
-    HPEN oldPen = (HPEN)SelectObject(hdc, borderPen);
+    // Calculate aspect ratio display area
+    RECT aspectRect = m_canvasRect;
     
-    Rectangle(hdc, 
-        m_canvasRect.left, 
-        m_canvasRect.top, 
-        m_canvasRect.right, 
-        m_canvasRect.bottom
-    );
-    
-    SelectObject(hdc, oldPen);
-    DeleteObject(borderPen);
-    
-    // If no image is loaded, display a message
-    if (!m_hasImage) {
+    if (m_width > 0 && m_height > 0) {
+        int canvasWidth = m_canvasRect.right - m_canvasRect.left;
+        int canvasHeight = m_canvasRect.bottom - m_canvasRect.top;
+        
+        // Calculate the maximum size that fits the canvas while maintaining aspect ratio
+        float canvasRatio = (float)canvasWidth / canvasHeight;
+        float aspectRatio = (float)m_width / m_height;
+        
+        int displayWidth, displayHeight;
+        
+        if (aspectRatio > canvasRatio) {
+            // Width limited by canvas width
+            displayWidth = canvasWidth - 40; // 20px margin on each side
+            displayHeight = (int)(displayWidth / aspectRatio);
+        } else {
+            // Height limited by canvas height
+            displayHeight = canvasHeight - 40; // 20px margin on each side
+            displayWidth = (int)(displayHeight * aspectRatio);
+        }
+        
+        // Center the aspect ratio rectangle
+        int left = m_canvasRect.left + (canvasWidth - displayWidth) / 2;
+        int top = m_canvasRect.top + (canvasHeight - displayHeight) / 2;
+        
+        aspectRect.left = left;
+        aspectRect.top = top;
+        aspectRect.right = left + displayWidth;
+        aspectRect.bottom = top + displayHeight;
+        
+        // Draw checkerboard pattern for transparency
+        for (int y = aspectRect.top; y < aspectRect.bottom; y += 10) {
+            for (int x = aspectRect.left; x < aspectRect.right; x += 10) {
+                RECT checkerRect = { x, y, x + 10, y + 10 };
+                bool isLight = ((x / 10) + (y / 10)) % 2 == 0;
+                HBRUSH checkerBrush = CreateSolidBrush(isLight ? RGB(240, 240, 240) : RGB(220, 220, 220));
+                FillRect(hdc, &checkerRect, checkerBrush);
+                DeleteObject(checkerBrush);
+            }
+        }
+        
+        // If we have an image, draw it
+        if (m_hasImage && m_pImage) {
+            Gdiplus::Graphics graphics(hdc);
+            graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+            graphics.DrawImage(m_pImage, 
+                Gdiplus::Rect(aspectRect.left, aspectRect.top, 
+                              aspectRect.right - aspectRect.left, 
+                              aspectRect.bottom - aspectRect.top));
+        }
+        
+        // Draw border around the aspect ratio rectangle
+        HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(100, 100, 100));
+        HPEN oldPen = (HPEN)SelectObject(hdc, borderPen);
+        
+        Rectangle(hdc, 
+            aspectRect.left, 
+            aspectRect.top, 
+            aspectRect.right, 
+            aspectRect.bottom
+        );
+        
+        SelectObject(hdc, oldPen);
+        DeleteObject(borderPen);
+        
+        // Display resolution in the corner
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(50, 50, 50));
+        
+        std::wstring sizeText = std::to_wstring(m_width) + L" × " + std::to_wstring(m_height);
+        RECT textRect = { aspectRect.left + 5, aspectRect.top + 5, aspectRect.right - 5, aspectRect.top + 25 };
+        
+        // Draw semi-transparent background for text
+        RECT textBgRect = textRect;
+        textBgRect.bottom = textBgRect.top + 20;
+        HBRUSH textBgBrush = CreateSolidBrush(RGB(255, 255, 255));
+        FillRect(hdc, &textBgRect, textBgBrush);
+        DeleteObject(textBgBrush);
+        
+        DrawTextW(hdc, sizeText.c_str(), -1, &textRect, DT_LEFT | DT_SINGLELINE);
+    } 
+    else {
+        // If no canvas size set, display a message
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(120, 120, 120));
         
         RECT textRect = m_canvasRect;
-        DrawTextW(hdc, L"Select a resolution or open an image to begin", -1, &textRect, 
-                 DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        DrawTextW(hdc, L"Select a resolution to begin", -1, &textRect, 
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 }
 

@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <map>
+#include <gdiplus.h>
 
 namespace PixelForge {
 
@@ -54,8 +55,8 @@ private:
     void CreateControls();
     void HandleCommand(WPARAM wParam, LPARAM lParam);
     void ResizeWindow(int width, int height);
-    void OpenImage();
     void DrawCanvas(HDC hdc);
+    void OpenImage();
     
     HWND CreateButton(const wchar_t* text, int x, int y, int width, int height, int id);
     
@@ -66,11 +67,24 @@ private:
     int m_height;
     
     RECT m_canvasRect;
-    bool m_hasImage;
     
     // UI Elements
     std::vector<HWND> m_buttons;
     std::vector<ResolutionPreset> m_resolutions;
+    HWND m_customLabel;
+    HWND m_widthInput;
+    HWND m_heightInput;
+    HWND m_applyButton;
+    HWND m_openButton;
+    
+    // Custom resolution storage
+    int m_customWidth;
+    int m_customHeight;
+    
+    // Image handling
+    bool m_hasImage;
+    Gdiplus::Image* m_pImage = nullptr;
+    ULONG_PTR m_gdiplusToken;
     
     // Constants
     static constexpr int BUTTON_HEIGHT = 30;
@@ -81,8 +95,10 @@ private:
     // Control IDs
     enum ControlIDs {
         ID_BUTTON_BASE = 100,
-        ID_CUSTOM_RESOLUTION = 200,
-        ID_OPEN_IMAGE = 201
+        ID_CUSTOM_WIDTH = 200,
+        ID_CUSTOM_HEIGHT = 201,
+        ID_APPLY_CUSTOM = 202,
+        ID_OPEN_IMAGE = 203
     };
 };
 

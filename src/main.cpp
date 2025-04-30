@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <commctrl.h>   // Windows common controls
 #include <stdio.h>
+#include <gdiplus.h>
 #include "core/application.h"
 
 // Initialize common controls - MinGW compatible approach
@@ -8,6 +9,7 @@
 // MinGW doesn't support pragma comment
 #else
 #pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "gdiplus.lib")
 #endif
 
 #ifdef DEBUG
